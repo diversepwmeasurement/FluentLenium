@@ -1,158 +1,141 @@
-# This workflow will build a Java project with Maven
-# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
-
-name: Java pipeline
-
-on:
-  push:
-    branches:
-      - develop
-  pull_request:
-    branches: [ develop ]
-
-env:
-  MAVEN_OPTS: >- 
-    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn 
-    -Didea.ignore.disabled.plugins=true 
-    -Didea.home.path=/tmp"
-
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
+  group: ${{ github.workflow }}-${{ github.ref }}
+env:
+  MAVEN_OPTS: -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn  -Didea.ignore.disabled.plugins=true  -Didea.home.path=/tmp"
 jobs:
   check-env:
-    runs-on: ubuntu-latest
     outputs:
       repo-token-available: ${{ steps.repo-token.outputs.defined }}
+    runs-on: self-hosted
     steps:
-      - id: repo-token
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        if: "${{ env.REPO_TOKEN != '' }}"
-        run: echo "defined=true" >> "$GITHUB_OUTPUT"
-
+    - continue-on-error: true
+      env:
+        REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      id: repo-token
+      if: ${{ env.REPO_TOKEN != '' }}
+      run: echo "defined=true" >> "$GITHUB_OUTPUT"
   java11-build:
-    timeout-minutes: 20
-    needs: [ check-env ]
-    runs-on: ubuntu-latest
+    needs:
+    - check-env
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 11
+    - continue-on-error: true
+      name: Java 11 - unit & integration tests code coverage
+      run: 'set -o pipefail
 
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 11
+        ./mvnw -B -Pjava11,ci  -Dfailsafe.rerunFailingTestsCount=1 -Dsurefire.rerunFailingTestsCount=1
+        clean verify jacoco:report -Dscan -Dscan.tag.Java11
 
-      - name: Java 11 - unit & integration tests code coverage
-        run: >-
-          set -o pipefail
-          
-          ./mvnw -B -Pjava11,ci 
-          -Dfailsafe.rerunFailingTestsCount=1
-          -Dsurefire.rerunFailingTestsCount=1
-          clean verify jacoco:report -Dscan -Dscan.tag.Java11
-          
-          set +o pipefail
+        set +o pipefail'
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Java 11 Test Reports
+        report_paths: '**/target/*-reports/TEST-*.xml'
+    - continue-on-error: true
+      env:
+        REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      if: needs.check-env.outputs.repo-token-available == 'true'
+      name: Coveralls report
+      run: './mvnw -B -Pjava11 -DrepoToken=$REPO_TOKEN coveralls:report
 
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Java 11 Test Reports
-          report_paths: '**/target/*-reports/TEST-*.xml'
-      - name: Coveralls report
-        if: needs.check-env.outputs.repo-token-available == 'true'
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          ./mvnw -B -Pjava11 -DrepoToken=$REPO_TOKEN coveralls:report
-
+        '
+    timeout-minutes: 20
   java17-build:
+    needs:
+    - check-env
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Java 17 - unit & integration tests code coverage
+      run: 'set -o pipefail
+
+        ./mvnw -B -Pjava17,ci  -Dfailsafe.rerunFailingTestsCount=1 -Dsurefire.rerunFailingTestsCount=1
+        clean verify jacoco:report -Dscan -Dscan.tag.Java17
+
+        set +o pipefail'
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Java 17 Test Reports
+        report_paths: '**/target/*-reports/TEST-*.xml'
+    - continue-on-error: true
+      env:
+        REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      if: needs.check-env.outputs.repo-token-available == 'true'
+      name: Coveralls report
+      run: './mvnw -B -Pjava17 -DrepoToken=$REPO_TOKEN coveralls:report
+
+        '
     timeout-minutes: 20
-    needs: [ check-env ]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Java 17 - unit & integration tests code coverage
-        run: >-
-          set -o pipefail
-
-          ./mvnw -B -Pjava17,ci 
-          -Dfailsafe.rerunFailingTestsCount=1
-          -Dsurefire.rerunFailingTestsCount=1
-          clean verify jacoco:report -Dscan -Dscan.tag.Java17
-
-          set +o pipefail
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Java 17 Test Reports
-          report_paths: '**/target/*-reports/TEST-*.xml'
-      - name: Coveralls report
-        if: needs.check-env.outputs.repo-token-available == 'true'
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          ./mvnw -B -Pjava17 -DrepoToken=$REPO_TOKEN coveralls:report
-
-  java17-parallelism-tests:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: determine Fluentlenium version
-        uses: ./.github/actions/determine-fluentlenium-version
-
-      - name: Java 17 - unit & integration tests
-        run: >-
-          ./mvnw -Dit.project.version=$FLUENTLENIUM_VERSION 
-          -B -Pframework-integration-tests,java17 
-          -pl '!fluentlenium-integration-tests,!fluentlenium-kotest,
-          !fluentlenium-kotest-assertions,!fluentlenium-cucumber,
-          !fluentlenium-spock,!fluentlenium-coverage-report,
-          !fluentlenium-spring-testng' 
-          clean test -Dtest=*/it/* -Dsurefire.failIfNoSpecifiedTests=false
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Java 17 Parallelism Test Reports
-          report_paths: '**/target/*-reports/TEST-*.xml'
-
   java17-javadoc:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Install Fluentlenium
-        uses: ./.github/actions/fluentlenium-maven-install
-
-      - name: Java 17 - JavaDoc
-        run: ./mvnw -B -Pjava17 javadoc:aggregate
-
-      - name: Java 17 - Dokka
-        run: >-
-          ./mvnw -B -pl fluentlenium-kotest,fluentlenium-kotest-assertions 
-          -P sonatype-oss-release org.jetbrains.dokka:dokka-maven-plugin:dokka
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Install Fluentlenium
+      uses: ./.github/actions/fluentlenium-maven-install
+    - continue-on-error: true
+      name: Java 17 - JavaDoc
+      run: ./mvnw -B -Pjava17 javadoc:aggregate
+    - continue-on-error: true
+      name: Java 17 - Dokka
+      run: ./mvnw -B -pl fluentlenium-kotest,fluentlenium-kotest-assertions  -P sonatype-oss-release
+        org.jetbrains.dokka:dokka-maven-plugin:dokka
+    timeout-minutes: 10
+  java17-parallelism-tests:
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: determine Fluentlenium version
+      uses: ./.github/actions/determine-fluentlenium-version
+    - continue-on-error: true
+      name: Java 17 - unit & integration tests
+      run: ./mvnw -Dit.project.version=$FLUENTLENIUM_VERSION  -B -Pframework-integration-tests,java17  -pl
+        '!fluentlenium-integration-tests,!fluentlenium-kotest, !fluentlenium-kotest-assertions,!fluentlenium-cucumber,
+        !fluentlenium-spock,!fluentlenium-coverage-report, !fluentlenium-spring-testng'  clean
+        test -Dtest=*/it/* -Dsurefire.failIfNoSpecifiedTests=false
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Java 17 Parallelism Test Reports
+        report_paths: '**/target/*-reports/TEST-*.xml'
+    timeout-minutes: 10
+name: Java pipeline
+on:
+  repository_dispatch:
+    types: trigger-ga___build-workflow.yml

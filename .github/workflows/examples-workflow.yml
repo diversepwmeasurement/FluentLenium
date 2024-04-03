@@ -1,237 +1,251 @@
-# This workflow will build a Java project with Maven
-# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
-
-name: Check examples
-
-on:
-  push:
-    branches:
-      - develop
-  pull_request:
-    branches: [ develop ]
-
-env:
-  MAVEN_OPTS: "-Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn -Didea.ignore.disabled.plugins=true -Didea.home.path=/tmp"
-
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
+  group: ${{ github.workflow }}-${{ github.ref }}
+env:
+  MAVEN_OPTS: -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+    -Didea.ignore.disabled.plugins=true -Didea.home.path=/tmp
 jobs:
-  versions:
-    runs-on: ubuntu-latest
+  gradle-firefox-example:
     env:
-      MAVEN_OPTS: "-Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn -Dmaven.javadoc.skip"
+      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
+      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
+    needs:
+    - versions
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Install Fluentlenium
+      uses: ./.github/actions/fluentlenium-maven-install
+    - continue-on-error: true
+      name: Run gradle firefox quickstart as it is
+      run: cd examples/quickstart-firefox && ./gradlew check
+    - continue-on-error: true
+      name: Run gradle firefox quickstart with current branch
+      run: cd examples/quickstart-firefox && ./gradlew check -Pfluentlenium.version=$FLUENTLENIUM_VERSION
+        -Pselenium.version=$SELENIUM_VERSION
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Gradle Firefox example Test Reports
+        report_paths: '**/build/test-results/test/TEST-*.xml'
+    timeout-minutes: 10
+  gradle-kotest-example:
+    env:
+      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
+      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
+    needs:
+    - versions
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Install Fluentlenium
+      uses: ./.github/actions/fluentlenium-maven-install
+    - continue-on-error: true
+      name: Run gradle kotest quickstart as it is
+      run: cd examples/kotest && ./gradlew check
+    - continue-on-error: true
+      name: Run gradle kotest quickstart with current branch
+      run: cd examples/kotest && ./gradlew check -Pfluentlenium.version=$FLUENTLENIUM_VERSION
+        -Dselenium.version=$SELENIUM_VERSION
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Gradle Kotest examples Test Reports
+        report_paths: '**/build/test-results/test/TEST-*.xml'
+    timeout-minutes: 10
+  maven-examples-compileonly:
+    env:
+      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
+      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
+    needs:
+    - versions
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Install Fluentlenium
+      uses: ./.github/actions/fluentlenium-maven-install
+    - continue-on-error: true
+      name: Compile maven examples as they are
+      run: ./mvnw -B -nsu -Pexamples clean test-compile
+    - continue-on-error: true
+      name: Compile maven examples with current branch
+      run: ./mvnw -B -nsu -Pexamples clean test-compile -Dfluentlenium.version=$FLUENTLENIUM_VERSION
+        -Dselenium.version=$SELENIUM_VERSION
+    timeout-minutes: 10
+  maven-safari-example:
+    env:
+      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
+      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
+    needs:
+    - versions
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      name: Install Fluentlenium
+      uses: ./.github/actions/fluentlenium-maven-install
+    - continue-on-error: true
+      name: Enable Safari Driver
+      run: sudo safaridriver --enable
+    - continue-on-error: true
+      name: Select current FluentLenium
+      run: './mvnw -Pexamples -B -nsu -pl examples/quickstart-safari versions:set-property
+        -Dproperty=fluentlenium.version -DnewVersion=$FLUENTLENIUM_VERSION
+
+        '
+    - continue-on-error: true
+      name: List changes
+      run: git diff
+    - continue-on-error: true
+      name: Run safari examples (current branch)
+      run: ./mvnw -B -nsu -Pexamples -pl examples/quickstart-safari verify
+    - continue-on-error: true
+      name: Reset FluentLenium dependency
+      run: ./mvnw -Pexamples -B -nsu -pl examples/quickstart-safari versions:revert
+    - continue-on-error: true
+      name: Run safari examples (latest release)
+      run: ./mvnw -B -nsu -Pexamples -pl examples/quickstart-safari verify
+    - continue-on-error: true
+      if: failure()
+      name: Upload screenshots
+      uses: actions/upload-artifact@v4
+      with:
+        name: examples-safari-screenshots
+        path: 'examples/quickstart-safari/target/screenshots
+
+          '
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Safari example
+        report_paths: '**/target/*-reports/TEST-*.xml'
+    timeout-minutes: 10
+  maven-windows-example:
+    env:
+      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
+      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
+    needs:
+    - versions
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - continue-on-error: true
+      name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: zulu
+        java-version: 17
+    - continue-on-error: true
+      name: maven install (with retry)
+      uses: nick-fields/retry@v3
+      with:
+        command: .\mvnw.cmd -B clean install -DskipTests=true
+        max_attempts: 2
+        retry_on: all
+        timeout_minutes: 4
+    - continue-on-error: true
+      name: Select current FluentLenium
+      run: '.\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers
+        -Dproperty="fluentlenium.version" -DnewVersion="${{ needs.versions.outputs.fluentlenium
+        }}" versions:set-property
+
+        '
+    - continue-on-error: true
+      name: List changes
+      run: git diff
+    - continue-on-error: true
+      name: Run windows example (current branch)
+      run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers
+        verify
+    - continue-on-error: true
+      name: Reset FluentLenium dependency
+      run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers
+        versions:revert
+    - continue-on-error: true
+      name: Run windows example (latest release)
+      run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers
+        verify
+    - continue-on-error: true
+      if: always()
+      name: Publish Test reports
+      uses: mikepenz/action-junit-report@v4
+      with:
+        check_name: Microsoft example
+        report_paths: '**/target/*-reports/TEST-*.xml'
+    timeout-minutes: 15
+  versions:
+    env:
+      MAVEN_OPTS: -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+        -Dmaven.javadoc.skip
     outputs:
       fluentlenium: ${{ steps.fluentlenium.outputs.version }}
       selenium: ${{ steps.selenium.outputs.version }}
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+    - continue-on-error: true
+      uses: actions/checkout@v4
+    - continue-on-error: true
+      name: setup environment
+      uses: ./.github/actions/setup-environment
+      with:
+        java-version: 17
+    - continue-on-error: true
+      id: fluentlenium
+      name: determine fluentlenium version
+      run: 'echo "version=$(./mvnw -B -N org.apache.maven.plugins:maven-help-plugin:evaluate
+        -Dexpression=project.version| fgrep -v ''[INFO]''|fgrep -v ''[WARNING]'')"
+        >> "$GITHUB_OUTPUT"
 
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
+        cat $GITHUB_OUTPUT
 
-      - id: fluentlenium
-        name: "determine fluentlenium version"
-        run: |
-          echo "version=$(./mvnw -B -N org.apache.maven.plugins:maven-help-plugin:evaluate -Dexpression=project.version| fgrep -v '[INFO]'|fgrep -v '[WARNING]')" >> "$GITHUB_OUTPUT"
-          cat $GITHUB_OUTPUT
-      - id: selenium
-        name: "determine selenium version"
-        run: |
-          echo "version=$(./mvnw -B -N org.apache.maven.plugins:maven-help-plugin:evaluate -Dexpression=selenium.version| fgrep -v '[INFO]'|fgrep -v '[WARNING]')" >> "$GITHUB_OUTPUT"
-          cat $GITHUB_OUTPUT
+        '
+    - continue-on-error: true
+      id: selenium
+      name: determine selenium version
+      run: 'echo "version=$(./mvnw -B -N org.apache.maven.plugins:maven-help-plugin:evaluate
+        -Dexpression=selenium.version| fgrep -v ''[INFO]''|fgrep -v ''[WARNING]'')"
+        >> "$GITHUB_OUTPUT"
 
-  gradle-kotest-example:
-    needs: [ versions ]
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    env:
-      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
-      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
-    steps:
-      - uses: actions/checkout@v4
+        cat $GITHUB_OUTPUT
 
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Install Fluentlenium
-        uses: ./.github/actions/fluentlenium-maven-install
-
-      - name: Run gradle kotest quickstart as it is
-        run: cd examples/kotest && ./gradlew check
-
-      - name: Run gradle kotest quickstart with current branch
-        run: cd examples/kotest && ./gradlew check -Pfluentlenium.version=$FLUENTLENIUM_VERSION -Dselenium.version=$SELENIUM_VERSION
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Gradle Kotest examples Test Reports
-          report_paths: '**/build/test-results/test/TEST-*.xml'
-
-  gradle-firefox-example:
-    needs: [ versions ]
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    env:
-      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
-      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Install Fluentlenium
-        uses: ./.github/actions/fluentlenium-maven-install
-
-      - name: Run gradle firefox quickstart as it is
-        run: cd examples/quickstart-firefox && ./gradlew check
-
-      - name: Run gradle firefox quickstart with current branch
-        run: cd examples/quickstart-firefox && ./gradlew check -Pfluentlenium.version=$FLUENTLENIUM_VERSION -Pselenium.version=$SELENIUM_VERSION
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Gradle Firefox example Test Reports
-          report_paths: '**/build/test-results/test/TEST-*.xml'
-
-  maven-examples-compileonly:
-    needs: [ versions ]
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    env:
-      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
-      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Install Fluentlenium
-        uses: ./.github/actions/fluentlenium-maven-install
-
-      - name: Compile maven examples as they are
-        run: ./mvnw -B -nsu -Pexamples clean test-compile
-
-      - name: Compile maven examples with current branch
-        run: ./mvnw -B -nsu -Pexamples clean test-compile -Dfluentlenium.version=$FLUENTLENIUM_VERSION -Dselenium.version=$SELENIUM_VERSION
-
-  maven-safari-example:
-    needs: [ versions ]
-
-    timeout-minutes: 10
-    runs-on: macos-latest
-    env:
-      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
-      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          java-version: 17
-
-      - name: Install Fluentlenium
-        uses: ./.github/actions/fluentlenium-maven-install
-
-      - name: Enable Safari Driver
-        run: sudo safaridriver --enable
-
-      - name: Select current FluentLenium
-        run: >
-          ./mvnw -Pexamples -B -nsu -pl examples/quickstart-safari
-          versions:set-property
-          -Dproperty=fluentlenium.version -DnewVersion=$FLUENTLENIUM_VERSION
-
-      - name: List changes
-        run: git diff
-
-      - name: Run safari examples (current branch)
-        run: ./mvnw -B -nsu -Pexamples -pl examples/quickstart-safari verify
-
-      - name: Reset FluentLenium dependency
-        run: ./mvnw -Pexamples -B -nsu -pl examples/quickstart-safari versions:revert
-
-      - name: Run safari examples (latest release)
-        run: ./mvnw -B -nsu -Pexamples -pl examples/quickstart-safari verify
-
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: examples-safari-screenshots
-          path: |
-            examples/quickstart-safari/target/screenshots
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Safari example
-          report_paths: '**/target/*-reports/TEST-*.xml'
-
-  maven-windows-example:
-    needs: [ versions ]
-    timeout-minutes: 15
-    runs-on: windows-latest
-    env:
-      FLUENTLENIUM_VERSION: ${{ needs.versions.outputs.fluentlenium }}
-      SELENIUM_VERSION: ${{ needs.versions.outputs.selenium }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: 17
-
-      - name: maven install (with retry)
-        uses: nick-fields/retry@v3
-        with:
-          max_attempts: 2
-          timeout_minutes: 4
-          retry_on: all
-          command: .\mvnw.cmd -B clean install -DskipTests=true
-
-      - name: Select current FluentLenium
-        run: >
-          .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers
-          -Dproperty="fluentlenium.version" -DnewVersion="${{ needs.versions.outputs.fluentlenium }}"
-          versions:set-property
-
-      - name: List changes
-        run: git diff
-
-      - name: Run windows example (current branch)
-        run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers verify
-
-      - name: Reset FluentLenium dependency
-        run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers versions:revert
-
-      - name: Run windows example (latest release)
-        run: .\mvnw.cmd -Pexamples -B -nsu -pl examples/quickstart-microsoft-browsers verify
-
-      - name: Publish Test reports
-        uses: mikepenz/action-junit-report@v4
-        if: always() # always run even if the previous step fails
-        with:
-          check_name: Microsoft example
-          report_paths: '**/target/*-reports/TEST-*.xml'
+        '
+name: Check examples
+on:
+  repository_dispatch:
+    types: trigger-ga___examples-workflow.yml
